@@ -20,13 +20,25 @@ static int16_t audio_buffer[2][AUDIOBUFSIZE];
 
 #define BUTTON (GPIOA->IDR & GPIO_Pin_0)
 
+float saw(float time) {
+	return time-floorf(time);
+}
+
+float lp(float x) {
+	static float y;
+	y += 0.03f * (x - y);
+	return y;
+}
+
 void fillbuf(int16_t* buf) {
 	static uint32_t time;
 
 	GPIO_SetBits(GPIOD, GPIO_Pin_14);
 	for (int i = 0; i < AUDIOBUFSIZE/2; i++) {
-		int16_t sample = 0x7fff * (2.0 * time * (1.0f / 44100.0) * 123.0);
+		//int16_t sample = 0x7fff * (2.0 * time * (1.0f / 44100.0) * 123.0);
 		//int16_t sample = 0x7fff * sinf(2.0 * 3.14159 * time * (1.0f / 44100.0) * 123.0);
+		float t = time * (1.0 / 44100.0);
+		int16_t sample = 0x7fff * lp(saw(t * 123.0));
 		time++;
 		buf[2*i] = sample;
 		buf[2*i+1] = sample;
