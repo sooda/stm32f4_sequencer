@@ -5,6 +5,7 @@
 #include "stm32f4xx_conf.h"
 #include "utils.h"
 #include "Audio.h"
+#include "adc.h"
 
 // Private variables
 volatile uint32_t time_var1, time_var2;
@@ -24,10 +25,24 @@ float saw(float time) {
 	return time-floorf(time);
 }
 
-float lp(float x) {
-	static float y;
-	y += 0.03f * (x - y);
-	return y;
+int ankka;
+
+float lp(float x, float a,float* mem) {
+	*mem += a * (x - *mem);
+	return *mem;
+}
+
+float tejeezfilt(float x) {
+	static float q,w,e;
+	float a = (float)ankka/0xfff;
+
+	float y = x-e*2;
+	if (y>1)y=1;
+	else if (y<-1)y=-1;
+	x = lp(y, a, &q);
+	x = lp(x, a, &w);
+	x = lp(x, a, &e);
+	return x;
 }
 
 void fillbuf(int16_t* buf) {
@@ -38,7 +53,7 @@ void fillbuf(int16_t* buf) {
 		//int16_t sample = 0x7fff * (2.0 * time * (1.0f / 44100.0) * 123.0);
 		//int16_t sample = 0x7fff * sinf(2.0 * 3.14159 * time * (1.0f / 44100.0) * 123.0);
 		float t = time * (1.0 / 44100.0);
-		int16_t sample = 0x7fff * lp(saw(t * 123.0));
+		int16_t sample = 0x7fff * tejeezfilt(saw(t * 123.0));
 		time++;
 		buf[2*i] = sample;
 		buf[2*i+1] = sample;
@@ -46,12 +61,12 @@ void fillbuf(int16_t* buf) {
 	GPIO_ResetBits(GPIOD, GPIO_Pin_14);
 }
 
-
 int main(void) {
 	init();
 	int volume = 0;
 
 	InitializeAudio(Audio44100HzSettings);
+	adc_init();
 	SetAudioVolume(0xCF);
 	PlayAudioWithCallback(AudioCallback, 0);
 	fillbuf(audio_buffer[0]);
@@ -59,7 +74,8 @@ int main(void) {
 		/*
 		 * Check if user button is pressed
 		 */
-			printf("*\r\n");
+		printf("* %d  %d\r\n", adc_read1(), adc_read2());
+		ankka = adc_read1();
 		if (BUTTON) {
 			// Debounce
 			Delay(10);
