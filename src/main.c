@@ -61,8 +61,10 @@ int main(void) {
 		synth_setparams(adc_read1());
 		if (BUTTON) {
 			// Debounce
-			Delay(100);
+			Delay(10);
 			if (BUTTON) {
+
+				synth_kill();
 
 				// Toggle audio volume
 				if (volume) {
@@ -72,7 +74,6 @@ int main(void) {
 					volume = 1;
 					SetAudioVolume(0xAF);
 				}
-
 
 				while(BUTTON){};
 			}

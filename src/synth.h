@@ -9,5 +9,6 @@ int synth_note_on(int midinote, int instrument);
 int synth_note_off(int midinote, int instrument);
 void synth_dump(void);
 void synth_setparams(float f);
+void synth_kill(void);
 
 #endif

@@ -323,3 +323,8 @@ int synth_note_off(int midinote, int instrument) {
 	}
 	return -1;
 }
+
+void synth_kill(void) {
+	for (int i = 0; i < NUM_CHANNELS; i++)
+		channels[i].note |= DEADBIT;
+}
