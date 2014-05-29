@@ -73,7 +73,7 @@ lib:
 
 proj: 	$(OUTPATH)/$(PROJ_NAME).elf
 
-$(OUTPATH)/$(PROJ_NAME).elf: $(SRCS)
+$(OUTPATH)/$(PROJ_NAME).elf: $(SRCS) | lib
 	$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 	$(OBJCOPY) -O ihex $(OUTPATH)/$(PROJ_NAME).elf $(OUTPATH)/$(PROJ_NAME).hex
 	$(OBJCOPY) -O binary $(OUTPATH)/$(PROJ_NAME).elf $(OUTPATH)/$(PROJ_NAME).bin
