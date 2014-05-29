@@ -30,11 +30,6 @@ float tejeezfilt(float x) {
 #include <limits.h>
 #include <math.h>
 
-float sawlol() {
-	static float time;
-	time += 50.0/44100;
-	return time-floorf(time);
-}
 // samplerate 48khz
 // ~21 microseconds between samples
 // cpu 100MHz = 0.01 microseconds per instruction
@@ -57,9 +52,11 @@ typedef struct AdsrParams {
 	float attack, decay, sustain, release; // magic coefs lol
 } AdsrParams;
 
+typedef struct Channel Channel;
+
 // TODO: instrument or channel here?
 typedef struct Instrument {
-	void (*initfunc)(void *ch, void* inst);
+	void (*initfunc)(Channel* ch);
 	sample (*oscfunc)(void* state);
 	sample (*filtfunc)(void* state, sample input);
 	AdsrParams adsrparams;
@@ -86,48 +83,6 @@ typedef struct Channel {
 	char oscstate[64];
 	char filtstate[64];
 } Channel;
-
-
-#if 0
-
-
-// shouldn't need to check alive bit - never called for dead voices (no zombie channels possible)
-// FIXME: bloat
-int adsr(const AdsrParams* params, AdsrState* state) {
-	int out = state->value;
-	// TODO: use time constant to precalc coefs, skip to next if value == zing
-	// TODO: precalculate coefficients g = 1 - exp(1/(T*fs))
-	// TODO: use linear ramp at attack stage?
-	state->value = lowpass_juttu(state->currentcoef, state->nextvalue);
-	if (++state->time >= state->nexttime) {
-		switch (state->section) {
-			case ADSR_ATTACK:
-				state->currentcoef = params->decay;
-				state->nextvalue = params->sustain;
-				break;
-			case ADSR_DECAY:
-				state->currentcoef = FIX(1);
-				state->value = params->sustain; // TODO: do i need this when it has went there already
-				break;
-			case ADSR_SUSTAIN:
-				state->currentcoef = params->release;
-				break;
-			case ADSR_RELEASE:
-				break;
-			default:
-				assert(0); // no zombie channels
-		}
-		state->nexttime = params->nexttime[state->section];
-		state->section++;
-	}
-	return out;
-}
-int adsr_init(const AdsrParams* params, AdsrState* state) {
-	memset(state, 0, sizeof(*state));
-	state->currentcoef = params->attack;
-}
-
-#endif
 
 #define DEADBIT (1<<15)
 #define KEYOFFBIT (1<<14)
@@ -157,7 +112,6 @@ sample adsreval(AdsrParams *params, AdsrState *state, int note) {
 			state->val += params->release * (state->tgt - state->val);
 			if (state->val < 0) {
 				state->mode = ADSR_KILLED;
-				state->val = 0.0; // ?
 			}
 			break;
 		case ADSR_KILLED:
@@ -181,17 +135,15 @@ float midifreq(int note) {
 // sample osc_pulse(int time, int note);
 // sample osc_rnd(RandomState* state);
 
+#include "sawticks.c"
 
 // lowpass filter coefficients may change over time due to lfo's
 
 typedef struct LowpassParams {
-//	int freq;
-//	int coef; // here for initialization
+	float magic;
 } LowpassParams;
 
 typedef struct LowpassState {
-	int coef; // this here for lfos and stuff, init'd at the beginning of the note
-	sample prev;
 } LowpassState;
 
 typedef struct BassState {
@@ -204,26 +156,35 @@ typedef struct {
 } BassInstrument;
 
 // TODO: inline these if needed
-sample lowpass(LowpassState* state, sample x) {
-	return state->prev + state->coef * (x - state->prev);
-}
+//sample lowpass(LowpassState* state, sample x) {
+	//return state->prev + state->coef * (x - state->prev);
+//}
 #define LOWPASS_COEF(freq) (DT / (freq / (2 * M_PI) + DT))
 // TODO: function or not? get rid of division
 #define lowpass_coef(freq) LOWPASS_COEF(freq)
-
-
-
 
 sample lfo_iexp(int time, int freq) {
 	return exp(-time * freq);
 }
 
-void trivialsaw_init(void* p) {
+void trivial_lp_init(void* state, LowpassParams* params) {
 }
 
-void bass_init(void* p, void*q) {
-	trivialsaw_init(p);
-	// TODO
+typedef struct {
+	float tick;
+	float val;
+} OscSawState;
+
+void osc_saw_init(void* st, int note) {
+	OscSawState* state = st;
+	state->tick = sawticks[note];
+	state->val = -1.0;
+}
+
+void bass_init(Channel *ch) {
+	BassInstrument *ins = (BassInstrument*)ch->instr;
+	trivial_lp_init(ch->filtstate, &ins->lp);
+	osc_saw_init(ch->oscstate, ch->note);
 }
 
 #if 0
@@ -232,10 +193,12 @@ sample bassosc(const Bass* instru, BassState* state, int note) {
 }
 
 #endif
-sample osc_dpwsaw_eval(void* v) {
-	float *time = v;
-	*time += 123*DT;
-	return *time-floorf(*time);
+sample osc_saw_eval(void* st) {
+	OscSawState* state = st;
+	state->val += state->tick;
+	if (state->val > 1.0)
+		state->val -= 2.0;
+	return state->val;
 }
 
 sample bass_filt(void* state, sample in) {
@@ -256,7 +219,7 @@ sample bass_filt(void* state, sample in) {
 static Channel channels[NUM_CHANNELS];
 
 #define FiltTrivLpK (DT*2*PI)
-#define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
+#define TRIVIAL_LP_PARM(fc) { ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1)) }
 
 //#define ADSRBLOCK(At,Dt,Sl,Rt) (1
 
@@ -273,12 +236,12 @@ static Channel channels[NUM_CHANNELS];
 BassInstrument bass = {
 	{
 		bass_init,
-		osc_dpwsaw_eval,
+		osc_saw_eval,
 		bass_filt,
 		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 		//{ 0.0004534119168875158,0.00004535044555269668,0.8,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 	},
-	//TRIVIAL_LP_PARM(5000)
+	TRIVIAL_LP_PARM(5000)
 };
 	//440, LOWPASS_COEF(440)}, 1};
 Instrument* instruments = {
@@ -323,6 +286,14 @@ int32_t synth_sample(void) {
 	return 0x7fff * out;
 }
 
+void synth_dump(void) {
+	for (int i = 0; i < NUM_CHANNELS; i++) {
+		Channel* ch = &channels[i];
+		printf("ch=%d n=%d adsr=%d:%f\r\n", i, ch->note,
+				ch->adsrstate.mode, ch->adsrstate.val);
+	}
+}
+
 
 int synth_note_on(int midinote, int instrument) {
 	for (int i = 0; i < NUM_CHANNELS; i++) {
@@ -333,7 +304,7 @@ int synth_note_on(int midinote, int instrument) {
 			ch->velocity = 1.0;
 			ch->instrunum = instrument;
 			ch->instr = &instruments[instrument];
-			ch->instr->initfunc(ch, ch->instr);
+			ch->instr->initfunc(ch);
 			return 0;
 		}
 	}

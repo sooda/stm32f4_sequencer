@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
+#include <ctype.h>
 #include "stm32f4xx_conf.h"
 #include "utils.h"
 #include "Audio.h"
@@ -45,24 +46,17 @@ int main(void) {
 	adc_init();
 
 	synth_init();
-	synth_note_on(42, 0);
 
 	SetAudioVolume(0xCF);
 	PlayAudioWithCallback(AudioCallback, 0);
-	int running=1;
 	fillbuf(audio_buffer[0]);
 
 	for(;;) {
 		/*
 		 * Check if user button is pressed
 		 */
-		printf("* %d  %d\r\n", adc_read1(), adc_read2());
+		//printf("* %d  %d\r\n", adc_read1(), adc_read2());
 		if (BUTTON) {
-			if (running)
-				synth_note_off(42, 0);
-			else
-				synth_note_on(42, 0);
-			running = !running;
 			// Debounce
 			Delay(100);
 			if (BUTTON) {
@@ -157,12 +151,12 @@ void init() {
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_6;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP; // pushpull
 	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
 	GPIO_Init(GPIOD, &GPIO_InitStructure);
 
-	GPIO_PinAFConfig(GPIOD, GPIO_PinSource5, GPIO_AF_USART1);
-	GPIO_PinAFConfig(GPIOD, GPIO_PinSource6, GPIO_AF_USART1);
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource5, GPIO_AF_USART2);
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource6, GPIO_AF_USART2);
 
 	// Conf
 	USART_InitStructure.USART_BaudRate = 115200;
@@ -173,8 +167,30 @@ void init() {
 	USART_InitStructure.USART_Mode = USART_Mode_Tx | USART_Mode_Rx;
 	USART_Init(USART2, &USART_InitStructure);
 
+	USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
+	
+	NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
 	// Enable
 	USART_Cmd(USART2, ENABLE);
+}
+
+void USART2_IRQHandler(void) {
+	if (USART_GetITStatus(USART2, USART_IT_RXNE)) {
+		int t = USART2->DR;
+		if (isupper(t)) {
+			synth_note_on(t - 'A' + 42, 0);
+			synth_dump();
+		} else if (islower(t)) {
+			synth_note_off(t - 'a' + 42, 0);
+			synth_dump();
+		}
+	}
 }
 
 /*

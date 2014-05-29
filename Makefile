@@ -29,7 +29,7 @@ OBJCOPY=$(BINPREFIX)objcopy
 SIZE=$(BINPREFIX)size
 STFLASH=st-flash
 
-CFLAGS  = -std=gnu99 -g -O2 -Wall -Tstm32_flash.ld
+CFLAGS  = -std=gnu99 -g -O2 -Wall -Wextra -Wno-unused-parameter -Tstm32_flash.ld
 CFLAGS += -mlittle-endian -mthumb -mthumb-interwork -nostartfiles -mcpu=cortex-m4
 
 ifeq ($(FLOAT_TYPE), hard)
