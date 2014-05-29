@@ -110,6 +110,15 @@ typedef struct LowpassState {
 	float coef;
 } LowpassState;
 
+typedef struct HighpassParams {
+	float coef;
+} HighpassParams;
+
+typedef struct HighpassState {
+	float val;
+	float coef;
+} HighpassState;
+
 
 void trivial_lp_init(void* st, LowpassParams* params) {
 	LowpassState *state = st;
@@ -121,6 +130,22 @@ sample trivial_lp_eval(void* st, sample in) {
 	LowpassState *state = st;
 	state->val += state->coef * (in - state->val);
 	return state->val;
+}
+
+void trivial_hp_init(void* st, HighpassParams* params) {
+	HighpassState *state = st;
+	state->coef = params->coef;
+	state->val = 0.0;
+}
+
+// y1 = g * (y0 + x1 - x0)
+//    = g * (x1 + (y0 - x0))
+//    = g * (x1 + stored) [in = x1]
+sample trivial_hp_eval(void* st, sample in) {
+	HighpassState *state = st;
+	float b = in + state->val; // b = x1 + (y0 - x0)
+	float y = state->coef * b;
+	return state->val = y;
 }
 
 
@@ -201,6 +226,7 @@ typedef struct {
 
 typedef struct {
 	Instrument base;
+	HighpassParams hp;
 } NoiseInstrument;
 
 
@@ -218,13 +244,22 @@ sample bass_filt(Instrument *self, void* st, sample in) {
 }
 
 void noise_init(Channel *ch) {
-	//NoiseInstrument *ins = (NoiseInstrument*)ch->instr;
+	NoiseInstrument *ins = (NoiseInstrument*)ch->instr;
+	trivial_hp_init(ch->filtstate, &ins->hp);
 	osc_noise_init(ch->oscstate);
+}
+
+sample noise_filt(Instrument *self, void* st, sample in) {
+	HighpassState *state = st;
+	NoiseInstrument *inst = (NoiseInstrument*)self;
+	state->coef = inst->hp.coef;
+	return trivial_hp_eval(state, in);
 }
 
 
 #define FiltTrivLpK (DT*2*PI)
 #define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
+#define TRIVIAL_HP_PARM(fc) (1/(1+FiltTrivLpK*fc))
 
 /* FIXME: approximate these? pow unavailable here
 	dc	(1-@POW(E,-1.0/(At*RATE)))
@@ -247,9 +282,10 @@ NoiseInstrument noise = {
 	{
 		noise_init,
 		osc_noise_eval,
-		NULL,
-		{ 0.0004534119168875158, 0.00004535044555269668, 0.6, 0.00002267547986504189 }
-	}
+		noise_filt,
+		{ 0.188063653849, 6.94420332348e-05, 0.0, 6.94420332348e-05 }
+	},
+	{ TRIVIAL_HP_PARM(5000) }
 };
 
 Instrument* instruments[] = {
@@ -335,6 +371,7 @@ void synth_kill(void) {
 
 void synth_setparams(float f) {
 	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
+	noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
 }
 
 
