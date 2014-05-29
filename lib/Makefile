@@ -1,7 +1,5 @@
-BINPATH=~/opt/arm-none-eabi-gnu/gcc-arm-none-eabi-4_8-2014q1/bin
-
-CC=$(BINPATH)/arm-none-eabi-gcc
-AR=$(BINPATH)/arm-none-eabi-ar
+CC=$(BINPREFIX)gcc
+AR=$(BINPREFIX)ar
 
 ###################################################
 

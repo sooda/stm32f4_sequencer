@@ -23,10 +23,10 @@ endif
 
 ###################################################
 
-BINPATH=~/opt/arm-none-eabi-gnu/gcc-arm-none-eabi-4_8-2014q1/bin
-CC=$(BINPATH)/arm-none-eabi-gcc
-OBJCOPY=$(BINPATH)/arm-none-eabi-objcopy
-SIZE=$(BINPATH)/arm-none-eabi-size
+BINPREFIX=arm-none-eabi-
+CC=$(BINPREFIX)gcc
+OBJCOPY=$(BINPREFIX)objcopy
+SIZE=$(BINPREFIX)size
 STFLASH=st-flash
 
 CFLAGS  = -std=gnu99 -g -O2 -Wall -Tstm32_flash.ld
@@ -69,7 +69,7 @@ flash: proj
 	$(STFLASH) write $(OUTPATH)/$(PROJ_NAME).bin $(LOADADDR)
 
 lib:
-	$(MAKE) -C lib FLOAT_TYPE=$(FLOAT_TYPE)
+	$(MAKE) -C lib FLOAT_TYPE=$(FLOAT_TYPE) BINPREFIX=$(BINPREFIX)
 
 proj: 	$(OUTPATH)/$(PROJ_NAME).elf
 
