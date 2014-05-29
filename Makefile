@@ -1,10 +1,10 @@
 # Project sources
 SRCS = main.c stm32f4xx_it.c system_stm32f4xx.c syscalls.c utils.c
-SRCS += Audio.c mp3_data.c
+SRCS += Audio.c
 
 # all the files will be generated with this name (main.elf, main.bin, main.hex, etc)
 
-PROJ_NAME=stm32f4_discovery_mp3
+PROJ_NAME=synth
 OUTPATH=build
 
 ###################################################
@@ -48,14 +48,11 @@ ROOT=$(shell pwd)
 CFLAGS += -Iinc -Ilib -Ilib/inc 
 CFLAGS += -Ilib/inc/core -Ilib/inc/peripherals
 
-# MP3
-CFLAGS += -Ihelix/pub
-
 # add startup file to build
 SRCS += lib/startup_stm32f4xx.s
 
 # Libraries to use
-LIBS = -Llib -lstm32f4 -Lhelix -lhelix -lm
+LIBS = -Llib -lstm32f4 -lm
 
 OBJS = $(SRCS:.c=.o)
 
@@ -68,7 +65,6 @@ all: lib proj
 
 lib:
 	$(MAKE) -C lib FLOAT_TYPE=$(FLOAT_TYPE)
-	$(MAKE) -C helix FLOAT_TYPE=$(FLOAT_TYPE)
 
 proj: 	$(OUTPATH)/$(PROJ_NAME).elf
 
@@ -83,5 +79,4 @@ clean:
 	rm -f $(OUTPATH)/$(PROJ_NAME).hex
 	rm -f $(OUTPATH)/$(PROJ_NAME).bin
 	$(MAKE) clean -C lib
-	$(MAKE) clean -C helix
 	
