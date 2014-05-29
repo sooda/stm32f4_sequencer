@@ -192,10 +192,10 @@ void USART2_IRQHandler(void) {
 	if (USART_GetITStatus(USART2, USART_IT_RXNE)) {
 		int t = USART2->DR;
 		if (isupper(t)) {
-			synth_note_on(t - 'A' + 42, 0);
+			synth_note_on(t - 'A' + 42, 1);
 			dodump = 1;
 		} else if (islower(t)) {
-			synth_note_off(t - 'a' + 42, 0);
+			synth_note_off(t - 'a' + 42, 1);
 			dodump = 1;
 		}
 	}
