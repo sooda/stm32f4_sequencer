@@ -163,6 +163,12 @@ typedef struct {
 } OscDpwState;
 
 typedef struct {
+	OscDpwState saw0;
+	OscDpwState saw1;
+	float duty; // 0=0% (1:0), 1=50% (1:1)
+} PlsDpwState;
+
+typedef struct {
 	uint32_t current;
 } OscNoiseState;
 
@@ -208,12 +214,30 @@ void osc_dpw_init(void* st, int note) {
 }
 
 sample osc_dpw_eval(Instrument *self, void* st) {
-	sample a = osc_saw_eval(self, st);
 	OscDpwState *state = st;
+	sample a = osc_saw_eval(self, st);
 	a *= a;
 	sample dif = state->val - a;
 	state->val = a;
 	return dif * state->coef;
+}
+
+void pls_dpw_init(void* st, int note, float duty) {
+	PlsDpwState* state = st;
+	osc_dpw_init(&state->saw0, note);
+	osc_dpw_init(&state->saw1, note);
+	// first advances a bit for phase difference
+	state->saw1.saw.val += duty;
+	state->duty = duty;
+}
+
+sample pls_dpw_eval(Instrument *self, void* st) {
+	PlsDpwState *state = st;
+	sample a = osc_dpw_eval(self, &state->saw0);
+	// TODO fix duty diff cycle here in case it's haxd with lfo
+	sample b = osc_dpw_eval(self, &state->saw1);
+	sample c = b - a; // originally -1+duty...duty
+	return c;// + state->duty; // ???
 }
 
 
@@ -229,6 +253,12 @@ typedef struct {
 	HighpassParams hp;
 } NoiseInstrument;
 
+typedef struct {
+	Instrument base;
+	LowpassParams lp;
+	float duty;
+} PulseBassInstrument;
+
 
 void bass_init(Channel *ch) {
 	BassInstrument *ins = (BassInstrument*)ch->instr;
@@ -237,8 +267,8 @@ void bass_init(Channel *ch) {
 }
 
 sample bass_filt(Instrument *self, void* st, sample in) {
-	LowpassState *state = st;
 	BassInstrument *bass = (BassInstrument*)self;
+	LowpassState *state = st;
 	state->coef = bass->lp.coef;
 	return trivial_lp_eval(state, in);
 }
@@ -250,12 +280,30 @@ void noise_init(Channel *ch) {
 }
 
 sample noise_filt(Instrument *self, void* st, sample in) {
-	HighpassState *state = st;
 	NoiseInstrument *inst = (NoiseInstrument*)self;
+	HighpassState *state = st;
 	state->coef = inst->hp.coef;
 	return trivial_hp_eval(state, in);
 }
 
+// TODO lfo-adsr
+void pulsebass_init(Channel *ch) {
+	PulseBassInstrument *ins = (PulseBassInstrument*)ch->instr;
+	trivial_lp_init(ch->filtstate, &ins->lp);
+	pls_dpw_init(ch->oscstate, ch->note, ins->duty);
+}
+
+sample pulsebass_osc(Instrument *self, void* st) {
+	// TODO update duty cycle here
+	return pls_dpw_eval(self, st);
+}
+
+sample pulsebass_filt(Instrument *self, void* st, sample in) {
+	PulseBassInstrument *bass = (PulseBassInstrument*)self;
+	LowpassState *state = st;
+	state->coef = bass->lp.coef;
+	return trivial_lp_eval(state, in);
+}
 
 #define FiltTrivLpK (DT*2*PI)
 #define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
@@ -288,9 +336,21 @@ NoiseInstrument noise = {
 	{ TRIVIAL_HP_PARM(5000) }
 };
 
+PulseBassInstrument pulsebass = {
+	{
+		pulsebass_init,
+		pulsebass_osc,
+		pulsebass_filt,
+		{ 0.000208311633451, 0.000208311633451, 0.5, 0.000208311633451 }
+	},
+	{ TRIVIAL_HP_PARM(5000) },
+	0.1,
+};
+
 Instrument* instruments[] = {
 	(Instrument*)&bass,
-	(Instrument*)&noise
+	(Instrument*)&noise,
+	(Instrument*)&pulsebass
 };
 
 
@@ -372,6 +432,7 @@ void synth_kill(void) {
 void synth_setparams(float f) {
 	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
 	noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
+	pulsebass.duty = f/0xfff;
 }
 
 
