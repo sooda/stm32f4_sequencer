@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "Audio.h"
 #include "adc.h"
+#include "synth.h"
 
 // Private variables
 volatile uint32_t time_var1, time_var2;
@@ -16,45 +17,20 @@ void init();
 
 volatile int nextbuf;
 volatile int buf_consumed;
-#define AUDIOBUFSIZE 8192
+#define AUDIOBUFSIZE 2048
 static int16_t audio_buffer[2][AUDIOBUFSIZE];
 
 #define BUTTON (GPIOA->IDR & GPIO_Pin_0)
-
-float saw(float time) {
-	return time-floorf(time);
-}
-
-int ankka;
-
-float lp(float x, float a,float* mem) {
-	*mem += a * (x - *mem);
-	return *mem;
-}
-
-float tejeezfilt(float x) {
-	static float q,w,e;
-	float a = (float)ankka/0xfff;
-
-	float y = x-e*2;
-	if (y>1)y=1;
-	else if (y<-1)y=-1;
-	x = lp(y, a, &q);
-	x = lp(x, a, &w);
-	x = lp(x, a, &e);
-	return x;
-}
-
 void fillbuf(int16_t* buf) {
-	static uint32_t time;
+	//static uint32_t time;
 
 	GPIO_SetBits(GPIOD, GPIO_Pin_14);
 	for (int i = 0; i < AUDIOBUFSIZE/2; i++) {
 		//int16_t sample = 0x7fff * (2.0 * time * (1.0f / 44100.0) * 123.0);
 		//int16_t sample = 0x7fff * sinf(2.0 * 3.14159 * time * (1.0f / 44100.0) * 123.0);
-		float t = time * (1.0 / 44100.0);
-		int16_t sample = 0x7fff * tejeezfilt(saw(t * 123.0));
-		time++;
+		//float t = time * (1.0 / 44100.0);
+		int16_t sample = synth_sample();// 0x7fff * tejeezfilt(saw(t * 123.0));
+		//time++;
 		buf[2*i] = sample;
 		buf[2*i+1] = sample;
 	}
@@ -67,18 +43,28 @@ int main(void) {
 
 	InitializeAudio(Audio44100HzSettings);
 	adc_init();
+
+	synth_init();
+	synth_note_on(42, 0);
+
 	SetAudioVolume(0xCF);
 	PlayAudioWithCallback(AudioCallback, 0);
+	int running=1;
 	fillbuf(audio_buffer[0]);
+
 	for(;;) {
 		/*
 		 * Check if user button is pressed
 		 */
 		printf("* %d  %d\r\n", adc_read1(), adc_read2());
-		ankka = adc_read1();
 		if (BUTTON) {
+			if (running)
+				synth_note_off(42, 0);
+			else
+				synth_note_on(42, 0);
+			running = !running;
 			// Debounce
-			Delay(10);
+			Delay(100);
 			if (BUTTON) {
 
 				// Toggle audio volume
