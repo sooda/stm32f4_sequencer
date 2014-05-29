@@ -1,22 +1,3 @@
-#if 0
-float lp(float x, float a,float* mem) {
-	*mem += a * (x - *mem);
-	return *mem;
-}
-float tejeezfilt(float x) {
-	static float q,w,e;
-	float a = (float)ankka/0xfff;
-
-	float y = x-e*2;
-	if (y>1)y=1;
-	else if (y<-1)y=-1;
-	x = lp(y, a, &q);
-	x = lp(x, a, &w);
-	x = lp(x, a, &e);
-	return x;
-}
-#endif
-
 #include "synth.h"
 #include <stdlib.h>
 #include <assert.h>
@@ -25,23 +6,15 @@ float tejeezfilt(float x) {
 #include <limits.h>
 #include <math.h>
 
-// samplerate 48khz
-// ~21 microseconds between samples
-// cpu 100MHz = 0.01 microseconds per instruction
-// ~2083 instructions/sample
+/***** Main configuration *****/
 
-// TODO: time units
-// TODO: status flags into bitfields
-// TODO: fixedpoint
-// TODO: instruments in memory X, states in memory Y to parallelize fetching
-//
-//#define FIX(x) (int)((x) * INT_MAX)
-#define FIX(x) (x)
 #define SAMPLERATE 44100
 #define DT (1.0f / SAMPLERATE)
 #define PI 3.14159265358979323846
-
 typedef float sample;
+
+
+/***** Core pipeline definitions: channels, instruments, ADSR *****/
 
 typedef struct AdsrParams {
 	float attack, decay, sustain, release; // magic coefs lol
@@ -56,16 +29,21 @@ typedef struct Instrument {
 	AdsrParams adsrparams;
 } Instrument;
 
-#define ADSR_ATTACK 1
-#define ADSR_DECAY 2
-#define ADSR_RELEASE 4
-#define ADSR_KILLED 8
+#define ADSR_MODE_ATTACK 1
+#define ADSR_MODE_DECAY 2
+#define ADSR_MODE_RELEASE 4
+#define ADSR_MODE_KILLED 8
 
 typedef struct AdsrState {
 	int mode;
 	float val;
 	float tgt;
 } AdsrState;
+
+// note magic bitmasks
+
+#define DEADBIT (1<<15)
+#define KEYOFFBIT (1<<14)
 
 typedef struct Channel {
 	int note; // contains alive data etc
@@ -78,37 +56,37 @@ typedef struct Channel {
 	char filtstate[64];
 } Channel;
 
-#define DEADBIT (1<<15)
-#define KEYOFFBIT (1<<14)
+
+/***** ADSR implementation *****/
 
 #define E 2.718281828
 #define TGTCOEF (E/(E-1))
 
 sample adsreval(AdsrParams *params, AdsrState *state, int note) {
 	if (note & KEYOFFBIT) {
-		if (state->mode == ADSR_RELEASE) {
+		if (state->mode == ADSR_MODE_RELEASE) {
 		} else {
-			state->mode = ADSR_RELEASE;
+			state->mode = ADSR_MODE_RELEASE;
 			state->tgt = (1 - TGTCOEF) * state->val;
 		}
 	}
 	switch (state->mode) {
-		case ADSR_ATTACK:
+		case ADSR_MODE_ATTACK:
 			state->val += params->attack * (TGTCOEF - state->val);
 			if (state->val >= 1.0) {
-				state->mode = ADSR_DECAY;
+				state->mode = ADSR_MODE_DECAY;
 			}
 			break;
-		case ADSR_DECAY:
+		case ADSR_MODE_DECAY:
 			state->val += params->decay * (params->sustain - state->val);
 			break;
-		case ADSR_RELEASE:
+		case ADSR_MODE_RELEASE:
 			state->val += params->release * (state->tgt - state->val);
 			if (state->val < 0) {
-				state->mode = ADSR_KILLED;
+				state->mode = ADSR_MODE_KILLED;
 			}
 			break;
-		case ADSR_KILLED:
+		case ADSR_MODE_KILLED:
 			return -1.0;
 			break;
 	}
@@ -116,18 +94,12 @@ sample adsreval(AdsrParams *params, AdsrState *state, int note) {
 }
 
 void adsr_init(AdsrState* state) {
-	state->mode = ADSR_ATTACK;
+	state->mode = ADSR_MODE_ATTACK;
 	state->val = 0.0;
 }
 
-float midifreq(int note) {
-	return (1 << ((note - 69) / 12)) * 440.0;
-}
 
-#include "sawticks.c"
-#include "dpwcoefs.c"
-
-// lowpass filter coefficients may change over time due to lfo's
+/***** Filters *****/
 
 typedef struct LowpassParams {
 	float coef;
@@ -138,17 +110,6 @@ typedef struct LowpassState {
 	float coef;
 } LowpassState;
 
-// TODO: inline these if needed
-//sample lowpass(LowpassState* state, sample x) {
-	//return state->prev + state->coef * (x - state->prev);
-//}
-#define LOWPASS_COEF(freq) (DT / (freq / (2 * M_PI) + DT))
-// TODO: function or not? get rid of division
-#define lowpass_coef(freq) LOWPASS_COEF(freq)
-
-sample lfo_iexp(int time, int freq) {
-	return exp(-time * freq);
-}
 
 void trivial_lp_init(void* st, LowpassParams* params) {
 	LowpassState *state = st;
@@ -161,6 +122,9 @@ sample trivial_lp_eval(void* st, sample in) {
 	state->val += state->coef * (in - state->val);
 	return state->val;
 }
+
+
+/***** Oscillators *****/
 
 typedef struct {
 	float tick;
@@ -176,6 +140,10 @@ typedef struct {
 typedef struct {
 	uint32_t current;
 } OscNoiseState;
+
+#include "sawticks.c"
+#include "dpwcoefs.c"
+
 
 void osc_noise_init(void* st) {
 	OscNoiseState* state = st;
@@ -222,6 +190,9 @@ sample osc_dpw_eval(Instrument *self, void* st) {
 	return dif * state->coef;
 }
 
+
+/***** Instruments *****/
+
 typedef struct {
 	Instrument base;
 	LowpassParams lp;
@@ -230,6 +201,7 @@ typedef struct {
 typedef struct {
 	Instrument base;
 } NoiseInstrument;
+
 
 void bass_init(Channel *ch) {
 	BassInstrument *ins = (BassInstrument*)ch->instr;
@@ -249,15 +221,11 @@ void noise_init(Channel *ch) {
 	osc_noise_init(ch->oscstate);
 }
 
-#define NUM_CHANNELS 8
-static Channel channels[NUM_CHANNELS];
 
 #define FiltTrivLpK (DT*2*PI)
 #define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
 
-//#define ADSRBLOCK(At,Dt,Sl,Rt) (1
-
-/*
+/* FIXME: approximate these? pow unavailable here
 	dc	(1-@POW(E,-1.0/(At*RATE)))
 	dc	(1-@POW(E,-1.0/(Dt*RATE)))
 	dc	Sl
@@ -270,7 +238,6 @@ BassInstrument bass = {
 		osc_dpw_eval,
 		bass_filt,
 		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
-		//{ 0.0004534119168875158,0.00004535044555269668,0.8,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 	},
 	{ TRIVIAL_LP_PARM(5000) }
 };
@@ -289,12 +256,15 @@ Instrument* instruments[] = {
 	(Instrument*)&noise
 };
 
-void synth_setparams(float f) {
-	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
-}
 
-sample eval_channel(Channel* ch) { // ch=r1
-	Instrument* instr = ch->instr; // instr=r4
+
+/***** Core implementation *****/
+
+#define NUM_CHANNELS 8
+static Channel channels[NUM_CHANNELS];
+
+static sample eval_channel(Channel* ch) {
+	Instrument* instr = ch->instr;
 	sample a = instr->oscfunc(instr, ch->oscstate);
 	sample b = instr->filtfunc ? instr->filtfunc(instr, ch->filtstate, a) : a;
 	sample c = adsreval(&instr->adsrparams, &ch->adsrstate, ch->note);
@@ -304,13 +274,8 @@ sample eval_channel(Channel* ch) { // ch=r1
 	return ch->velocity * b;
 }
 
-void synth_init(void) {
-	for (int i = 0; i < NUM_CHANNELS; i++) {
-		channels[i].note |= DEADBIT;
-	}
-}
+/* public interface */
 
-// render
 int32_t synth_sample(void) {
 	sample out = 0;
 	for (int i = 0; i < NUM_CHANNELS; i++) {
@@ -328,6 +293,11 @@ void synth_dump(void) {
 	}
 }
 
+void synth_init(void) {
+	for (int i = 0; i < NUM_CHANNELS; i++) {
+		channels[i].note |= DEADBIT;
+	}
+}
 
 int synth_note_on(int midinote, int instrument) {
 	for (int i = 0; i < NUM_CHANNELS; i++) {
@@ -361,3 +331,53 @@ void synth_kill(void) {
 	for (int i = 0; i < NUM_CHANNELS; i++)
 		channels[i].note |= DEADBIT;
 }
+
+void synth_setparams(float f) {
+	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
+}
+
+
+// random old notes
+
+#if 0
+float lp(float x, float a,float* mem) {
+	*mem += a * (x - *mem);
+	return *mem;
+}
+float tejeezfilt(float x) {
+	static float q,w,e;
+	float a = (float)ankka/0xfff;
+
+	float y = x-e*2;
+	if (y>1)y=1;
+	else if (y<-1)y=-1;
+	x = lp(y, a, &q);
+	x = lp(x, a, &w);
+	x = lp(x, a, &e);
+	return x;
+}
+
+// samplerate 48khz
+// ~21 microseconds between samples
+// cpu 100MHz = 0.01 microseconds per instruction
+// ~2083 instructions/sample
+
+// TODO: time units
+// TODO: status flags into bitfields
+// TODO: fixedpoint
+// TODO: instruments in memory X, states in memory Y to parallelize fetching
+//
+
+float midifreq(int note) {
+	return (1 << ((note - 69) / 12)) * 440.0;
+}
+
+#define LOWPASS_COEF(freq) (DT / (freq / (2 * M_PI) + DT))
+// TODO: function or not? get rid of division
+#define lowpass_coef(freq) LOWPASS_COEF(freq)
+
+sample lfo_iexp(int time, int freq) {
+	return exp(-time * freq);
+}
+
+#endif
