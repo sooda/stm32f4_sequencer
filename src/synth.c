@@ -156,8 +156,9 @@ sample osc_noise_eval(Instrument *self, void *st) {
 	x ^= x << 8;
 	x ^= x >> 1;
 	x ^= x << 11;
+	x &= 0xffffff;
 	state->current = x;
-	return x / 0xffffff - 0.5;
+	return (float)x / 0xffffff - 0.5;
 }
 
 void osc_saw_init(void* st, int note) {
