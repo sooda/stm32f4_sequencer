@@ -6,6 +6,7 @@ SRCS += Audio.c
 
 PROJ_NAME=synth
 OUTPATH=build
+LOADADDR=0x8000000
 
 ###################################################
 
@@ -26,6 +27,7 @@ BINPATH=~/opt/arm-none-eabi-gnu/gcc-arm-none-eabi-4_8-2014q1/bin
 CC=$(BINPATH)/arm-none-eabi-gcc
 OBJCOPY=$(BINPATH)/arm-none-eabi-objcopy
 SIZE=$(BINPATH)/arm-none-eabi-size
+STFLASH=st-flash
 
 CFLAGS  = -std=gnu99 -g -O2 -Wall -Tstm32_flash.ld
 CFLAGS += -mlittle-endian -mthumb -mthumb-interwork -nostartfiles -mcpu=cortex-m4
@@ -62,6 +64,9 @@ OBJS = $(SRCS:.c=.o)
 
 all: lib proj
 	$(SIZE) $(OUTPATH)/$(PROJ_NAME).elf
+
+flash: proj
+	$(STFLASH) write $(OUTPATH)/$(PROJ_NAME).bin $(LOADADDR)
 
 lib:
 	$(MAKE) -C lib FLOAT_TYPE=$(FLOAT_TYPE)
