@@ -136,6 +136,7 @@ float midifreq(int note) {
 // sample osc_rnd(RandomState* state);
 
 #include "sawticks.c"
+#include "dpwcoefs.c"
 
 // lowpass filter coefficients may change over time due to lfo's
 
@@ -175,16 +176,29 @@ typedef struct {
 	float val;
 } OscSawState;
 
+typedef struct {
+	OscSawState saw;
+	float val;
+	float coef;
+} OscDpwState;
+
 void osc_saw_init(void* st, int note) {
 	OscSawState* state = st;
 	state->tick = sawticks[note];
 	state->val = -1.0;
 }
 
+void osc_dpw_init(void* st, int note) {
+	OscDpwState* state = st;
+	osc_saw_init(st, note);
+	state->val = 1.0; // prev saw is -1 * -1
+	state->coef = dpwcoefs[note];
+}
+
 void bass_init(Channel *ch) {
 	BassInstrument *ins = (BassInstrument*)ch->instr;
 	trivial_lp_init(ch->filtstate, &ins->lp);
-	osc_saw_init(ch->oscstate, ch->note);
+	osc_dpw_init(ch->oscstate, ch->note);
 }
 
 #if 0
@@ -194,11 +208,20 @@ sample bassosc(const Bass* instru, BassState* state, int note) {
 
 #endif
 sample osc_saw_eval(void* st) {
-	OscSawState* state = st;
+	OscSawState *state = st;
 	state->val += state->tick;
 	if (state->val > 1.0)
 		state->val -= 2.0;
 	return state->val;
+}
+
+sample osc_dpw_eval(void* st) {
+	sample a = osc_saw_eval(st);
+	OscDpwState *state = st;
+	a *= a;
+	sample dif = state->val - a;
+	state->val = a;
+	return dif * state->coef;
 }
 
 sample bass_filt(void* state, sample in) {
@@ -236,7 +259,7 @@ static Channel channels[NUM_CHANNELS];
 BassInstrument bass = {
 	{
 		bass_init,
-		osc_saw_eval,
+		osc_dpw_eval,
 		bass_filt,
 		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 		//{ 0.0004534119168875158,0.00004535044555269668,0.8,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
@@ -290,7 +313,7 @@ void synth_dump(void) {
 	for (int i = 0; i < NUM_CHANNELS; i++) {
 		Channel* ch = &channels[i];
 		printf("ch=%d n=%d adsr=%d:%f\r\n", i, ch->note,
-				ch->adsrstate.mode, ch->adsrstate.val);
+				ch->adsrstate.mode, (double)ch->adsrstate.val);
 	}
 }
 

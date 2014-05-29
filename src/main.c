@@ -38,6 +38,8 @@ void fillbuf(int16_t* buf) {
 	GPIO_ResetBits(GPIOD, GPIO_Pin_14);
 }
 
+volatile int dodump;
+
 int main(void) {
 	init();
 	int volume = 0;
@@ -73,6 +75,10 @@ int main(void) {
 
 				while(BUTTON){};
 			}
+		}
+		if (dodump) {
+			dodump = 0;
+			synth_dump();
 		}
 		if (buf_consumed) {
 			int buf = nextbuf;
@@ -185,10 +191,10 @@ void USART2_IRQHandler(void) {
 		int t = USART2->DR;
 		if (isupper(t)) {
 			synth_note_on(t - 'A' + 42, 0);
-			synth_dump();
+			dodump = 1;
 		} else if (islower(t)) {
 			synth_note_off(t - 'a' + 42, 0);
-			synth_dump();
+			dodump = 1;
 		}
 	}
 }
