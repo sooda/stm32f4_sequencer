@@ -72,7 +72,7 @@ int main(void) {
 					SetAudioVolume(0xCF);
 				} else {
 					volume = 1;
-					SetAudioVolume(0xAF);
+					SetAudioVolume(0xfF);
 				}
 
 				while(BUTTON){};
@@ -189,15 +189,37 @@ void init() {
 }
 
 void USART2_IRQHandler(void) {
+	static int channum, chanstate, note, notevel;
 	if (USART_GetITStatus(USART2, USART_IT_RXNE)) {
 		int t = USART2->DR;
-		if (isupper(t)) {
-			synth_note_on(t - 'A' + 42, 2);
+#if 0
+		if (isdigit(t)) {
+			lastchannelnum = t - '0';
+		} else if (isupper(t)) {
+			synth_note_on(t - 'A' + 42, lastchannelnum);
 			dodump = 1;
 		} else if (islower(t)) {
-			synth_note_off(t - 'a' + 42, 2);
+			synth_note_off(t - 'a' + 42, lastchannelnum);
 			dodump = 1;
 		}
+#else
+		if (t & 0x80) {
+			channum = t & 0xf;
+			chanstate = t & 0x40;
+		} else if ((t & 0x40) && (t & 0x20)) {
+			note = (t & 0xf) << 4;
+		} else if ((t & 0x40) && (t & 0x10)) {
+			note |= (t & 0xf);
+		} else if (t & 0x20) {
+			notevel = (t & 0xf) << 4;
+		} else if (t & 0x10) {
+			notevel |= (t & 0xf);
+			if (chanstate)
+				synth_note_on(note,channum,notevel / 127.0);
+			else
+				synth_note_off(note,channum);
+		}
+#endif
 	}
 }
 

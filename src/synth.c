@@ -389,7 +389,7 @@ int32_t synth_sample(void) {
 		if (!(channels[i].note & DEADBIT))
 			out += eval_channel(&channels[i]);
 	}
-	return 0x7fff * out;
+	return 0x7fff * 0.1 * out; // FIXME: adaptive filter
 }
 
 void synth_dump(void) {
@@ -406,13 +406,13 @@ void synth_init(void) {
 	}
 }
 
-int synth_note_on(int midinote, int instrument) {
+int synth_note_on(int midinote, int instrument, float notevel) {
 	for (int i = 0; i < NUM_CHANNELS; i++) {
 		Channel* ch = &channels[i];
 		if (ch->note & DEADBIT) {
 			ch->note = midinote;
 			adsr_init(&ch->adsrstate);
-			ch->velocity = 1.0;
+			ch->velocity = notevel;
 			ch->instrunum = instrument;
 			ch->instr = instruments[instrument];
 			ch->instr->initfunc(ch);

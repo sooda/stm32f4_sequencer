@@ -4,3 +4,4 @@
 *.a
 tags
 build/
+*.pyc
