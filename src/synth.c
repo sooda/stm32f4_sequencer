@@ -227,6 +227,7 @@ void pls_dpw_init(void* st, int note, float duty) {
 	osc_dpw_init(&state->saw0, note);
 	osc_dpw_init(&state->saw1, note);
 	// first advances a bit for phase difference
+	// (starts at 0)
 	state->saw1.saw.val += duty;
 	state->duty = duty;
 }
@@ -234,7 +235,13 @@ void pls_dpw_init(void* st, int note, float duty) {
 sample pls_dpw_eval(Instrument *self, void* st) {
 	PlsDpwState *state = st;
 	sample a = osc_dpw_eval(self, &state->saw0);
-	// TODO fix duty diff cycle here in case it's haxd with lfo
+
+	// first advances a bit for phase difference
+	// fix duty diff cycle here in case it's haxd with lfo
+	state->saw1.saw.val = state->saw0.saw.val + state->duty;
+	if (state->saw1.saw.val > 1.0)
+		state->saw1.saw.val -= 2.0;
+
 	sample b = osc_dpw_eval(self, &state->saw1);
 	sample c = b - a; // originally -1+duty...duty
 	return c;// + state->duty; // ???
@@ -294,7 +301,10 @@ void pulsebass_init(Channel *ch) {
 }
 
 sample pulsebass_osc(Instrument *self, void* st) {
-	// TODO update duty cycle here
+	PulseBassInstrument *ins = (PulseBassInstrument*)self;
+	PlsDpwState* state = st;
+	// copy in case of pot/lfo update
+	state->duty = ins->duty;
 	return pls_dpw_eval(self, st);
 }
 
