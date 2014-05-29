@@ -58,6 +58,7 @@ int main(void) {
 		 * Check if user button is pressed
 		 */
 		//printf("* %d  %d\r\n", adc_read1(), adc_read2());
+		synth_setparams(adc_read1());
 		if (BUTTON) {
 			// Debounce
 			Delay(100);

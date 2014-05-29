@@ -1,9 +1,4 @@
 #if 0
-#include <math.h>
-
-float saw(float time) {
-	return time-floorf(time);
-}
 float lp(float x, float a,float* mem) {
 	*mem += a * (x - *mem);
 	return *mem;
@@ -54,11 +49,10 @@ typedef struct AdsrParams {
 
 typedef struct Channel Channel;
 
-// TODO: instrument or channel here?
 typedef struct Instrument {
 	void (*initfunc)(Channel* ch);
-	sample (*oscfunc)(void* state);
-	sample (*filtfunc)(void* state, sample input);
+	sample (*oscfunc)(struct Instrument *self, void* state);
+	sample (*filtfunc)(struct Instrument *self, void* state, sample input);
 	AdsrParams adsrparams;
 } Instrument;
 
@@ -130,21 +124,18 @@ float midifreq(int note) {
 	return (1 << ((note - 69) / 12)) * 440.0;
 }
 
-// sample osc_tri(int time, int note);
-// sample osc_saw(int time, int note);
-// sample osc_pulse(int time, int note);
-// sample osc_rnd(RandomState* state);
-
 #include "sawticks.c"
 #include "dpwcoefs.c"
 
 // lowpass filter coefficients may change over time due to lfo's
 
 typedef struct LowpassParams {
-	float magic;
+	float coef;
 } LowpassParams;
 
 typedef struct LowpassState {
+	float val;
+	float coef;
 } LowpassState;
 
 typedef struct BassState {
@@ -168,7 +159,16 @@ sample lfo_iexp(int time, int freq) {
 	return exp(-time * freq);
 }
 
-void trivial_lp_init(void* state, LowpassParams* params) {
+void trivial_lp_init(void* st, LowpassParams* params) {
+	LowpassState *state = st;
+	state->coef = params->coef;
+	state->val = 0.0;
+}
+
+sample trivial_lp_eval(void* st, sample in) {
+	LowpassState *state = st;
+	state->val += state->coef * (in - state->val);
+	return state->val;
 }
 
 typedef struct {
@@ -201,13 +201,7 @@ void bass_init(Channel *ch) {
 	osc_dpw_init(ch->oscstate, ch->note);
 }
 
-#if 0
-sample bassosc(const Bass* instru, BassState* state, int note) {
-	//return osc_sin(&state->osc, note);
-}
-
-#endif
-sample osc_saw_eval(void* st) {
+sample osc_saw_eval(Instrument *self, void* st) {
 	OscSawState *state = st;
 	state->val += state->tick;
 	if (state->val > 1.0)
@@ -215,8 +209,8 @@ sample osc_saw_eval(void* st) {
 	return state->val;
 }
 
-sample osc_dpw_eval(void* st) {
-	sample a = osc_saw_eval(st);
+sample osc_dpw_eval(Instrument *self, void* st) {
+	sample a = osc_saw_eval(self, st);
 	OscDpwState *state = st;
 	a *= a;
 	sample dif = state->val - a;
@@ -224,25 +218,19 @@ sample osc_dpw_eval(void* st) {
 	return dif * state->coef;
 }
 
-sample bass_filt(void* state, sample in) {
-	float *y = state;
-	*y += 0.4 * (in - *y);
-	return *y;
-#if 0
-	const int lowfreq = 100; // TODO: this also to the instrument? lp low freq?
-	int lfo = lfo_iexp(state->lfotime, instru->lfofreq);
-	state->lfotime++; // TODO: decide units
-	state->lp.coef = lowpass_coef(lowfreq + lfo * (instru->lp.freq - lowfreq));
-	return lowpass(&state->lp, s);
-#endif
-	return in;
+sample bass_filt(Instrument *self, void* st, sample in) {
+	LowpassState *state = st;
+	BassInstrument *bass = (BassInstrument*)self;
+	state->coef = bass->lp.coef;
+	return trivial_lp_eval(state, in);
 }
+
 
 #define NUM_CHANNELS 8
 static Channel channels[NUM_CHANNELS];
 
 #define FiltTrivLpK (DT*2*PI)
-#define TRIVIAL_LP_PARM(fc) { ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1)) }
+#define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
 
 //#define ADSRBLOCK(At,Dt,Sl,Rt) (1
 
@@ -253,9 +241,6 @@ static Channel channels[NUM_CHANNELS];
 	dc	(1-@POW(E,-1.0/(Rt*RATE)))
 */
 
-// TODO: INSTRUMENT(x, y) --> { (funccast)x,  etc}
-// blah, should be constants
-//
 BassInstrument bass = {
 	{
 		bass_init,
@@ -264,28 +249,21 @@ BassInstrument bass = {
 		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 		//{ 0.0004534119168875158,0.00004535044555269668,0.8,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 	},
-	TRIVIAL_LP_PARM(5000)
+	{ TRIVIAL_LP_PARM(5000) }
 };
-	//440, LOWPASS_COEF(440)}, 1};
 Instrument* instruments = {
 	(Instrument*)&bass
 };
-#if 0
-Instrument instruments[] = {
-	{
-		bass_init,
-		osc_dpwsaw_eval,
-		bass_filt,
-		ADSR_PARAMS(0.1, 0.1, 0.5, 0.1),
-		// filttriviallpparams
-	},
-};
-#endif
+
+void synth_setparams(float f) {
+	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
+}
+
 
 sample eval_channel(Channel* ch) { // ch=r1
 	Instrument* instr = ch->instr; // instr=r4
-	sample a = instr->oscfunc(ch->oscstate);// instr->oscfunc(instr, ch->instrstate, ch->note);
-	sample b = instr->filtfunc(ch->filtstate, a);// instr->filtfunc(instr, ch->instrstate, a);
+	sample a = instr->oscfunc(instr, ch->oscstate);
+	sample b = instr->filtfunc(instr, ch->filtstate, a);
 	sample c = adsreval(&instr->adsrparams, &ch->adsrstate, ch->note);
 	b *= c;
 	if (c < 0.0)
