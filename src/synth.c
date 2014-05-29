@@ -367,7 +367,7 @@ Instrument* instruments[] = {
 
 /***** Core implementation *****/
 
-#define NUM_CHANNELS 8
+#define NUM_CHANNELS 16
 static Channel channels[NUM_CHANNELS];
 
 static sample eval_channel(Channel* ch) {
