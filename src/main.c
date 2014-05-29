@@ -47,6 +47,7 @@ int main(void) {
 		/*
 		 * Check if user button is pressed
 		 */
+			printf("*\r\n");
 		if (BUTTON) {
 			// Debounce
 			Delay(10);

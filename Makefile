@@ -48,7 +48,7 @@ vpath %.a lib
 ROOT=$(shell pwd)
 
 CFLAGS += -Iinc -Ilib -Ilib/inc 
-CFLAGS += -Ilib/inc/core -Ilib/inc/peripherals
+CFLAGS += -Ilib/inc/core -Ilib/inc/peripherals -DHSE_VALUE=8000000
 
 # add startup file to build
 SRCS += lib/startup_stm32f4xx.s

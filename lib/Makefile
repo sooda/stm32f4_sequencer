@@ -27,7 +27,7 @@ CFLAGS += -msoft-float
 endif
 
 CFLAGS += -ffreestanding -nostdlib
-CFLAGS += -Iinc -Iinc/core -Iinc/peripherals
+CFLAGS += -Iinc -Iinc/core -Iinc/peripherals -DHSE_VALUE=8000000
 
 #SRCS  = stm32f4_discovery.c
 SRCS = misc.c stm32f4xx_dma.c stm32f4xx_rcc.c stm32f4xx_adc.c \
