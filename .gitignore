@@ -1,0 +1,6 @@
+*.swp
+*.vis
+*.o
+*.a
+tags
+build/
