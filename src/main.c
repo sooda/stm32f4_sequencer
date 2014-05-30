@@ -64,10 +64,10 @@ int main(void) {
 		 */
 		//printf("* %d  %d\r\n", adc_read1(), adc_read2());
 		int8_t acce[3];
-		accelread(acce);
+		accelread((uint8_t*)acce);
 		synth_setvolume((50 - abs(acce[1])) / 50.0);
 		synth_setparams(adc_read1());
-		printf("%+03d %+03d %+03d\r\n", acce[0], acce[1], acce[2]);
+		//printf("%+03d %+03d %+03d\r\n", acce[0], acce[1], acce[2]);
 		if (BUTTON) {
 			// Debounce
 			Delay(10);
