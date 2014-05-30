@@ -388,6 +388,34 @@ sample vibrato_filt(Instrument *self, void* st, sample in) {
 	return trivial_lp_eval(st, in);
 }
 
+typedef struct {
+	LowpassState lp[3];
+} TejeezFilt;
+
+void tejeez_init(Channel *ch) {
+	BassInstrument *ins = (BassInstrument*)ch->instr;
+	TejeezFilt *tjz = (TejeezFilt*)ch->filtstate;
+	trivial_lp_init(&tjz->lp[0], &ins->lp);
+	trivial_lp_init(&tjz->lp[1], &ins->lp);
+	trivial_lp_init(&tjz->lp[2], &ins->lp);
+	osc_dpw_init(ch->oscstate, ch->note);
+}
+
+sample tejeez_filt(Instrument *self, void* st, sample in) {
+	BassInstrument *bass = (BassInstrument*)self;
+	TejeezFilt *tjz = st;
+	tjz->lp[0].coef = bass->lp.coef;
+	tjz->lp[1].coef = bass->lp.coef;
+	tjz->lp[2].coef = bass->lp.coef;
+	sample x = in - 2 * tjz->lp[2].val;
+	if (x < -1) x = -1;
+	else if (x > 1) x = 1;
+	x = trivial_lp_eval(&tjz->lp[0], x);
+	x = trivial_lp_eval(&tjz->lp[1], x);
+	x = trivial_lp_eval(&tjz->lp[2], x);
+	return x;
+}
+
 #define FiltTrivLpK (DT*2*PI)
 #define TRIVIAL_LP_PARM(fc) ((FiltTrivLpK*fc)/(FiltTrivLpK*fc+1))
 #define TRIVIAL_HP_PARM(fc) (1/(1+FiltTrivLpK*fc))
@@ -404,7 +432,7 @@ BassInstrument bass = {
 		bass_init,
 		osc_dpw_eval,
 		bass_filt,
-		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.00002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
+		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
 	},
 	{ TRIVIAL_LP_PARM(5000) }
 };
@@ -443,11 +471,23 @@ VibratoInstrument vibrato = {
 	0
 };
 
+BassInstrument tejeez = {
+	{
+		tejeez_init,
+		osc_dpw_eval,
+		tejeez_filt,
+		{ 0.0004534119168875158,0.00004535044555269668,0.6,0.002267547986504189  } //ADSRBLOCK(0.05, 0.5, 0.8, 0.1),
+	},
+	{ TRIVIAL_LP_PARM(5000) }
+};
+
+
 Instrument* instruments[] = {
 	(Instrument*)&bass,
 	(Instrument*)&noise,
 	(Instrument*)&pulsebass,
-	(Instrument*)&vibrato
+	(Instrument*)&vibrato,
+	(Instrument*)&tejeez,
 };
 
 
@@ -538,6 +578,7 @@ void synth_setparams(float f, int chan) {
 		break;
 	case 1:
 		vibrato.lfonote = 10*f/0xfff;
+		tejeez.lp.coef = TRIVIAL_LP_PARM(f/0xfff*8000);
 		break;
 	}
 }
