@@ -1,0 +1,5 @@
+piuhat:
+
+uartdongle gnd, oranssi pd5, keltainen pd6
+punainen ja musta potikkapower
+sininen ja vihreä pa1 ja pa2
