@@ -201,14 +201,14 @@ void USART2_IRQHandler(void) {
 	static int channum, chanstate, note, notevel;
 	if (USART_GetITStatus(USART2, USART_IT_RXNE)) {
 		int t = USART2->DR;
-#if 0
+#if 1
 		if (isdigit(t)) {
-			lastchannelnum = t - '0';
+			channum = t - '0';
 		} else if (isupper(t)) {
-			synth_note_on(t - 'A' + 42, lastchannelnum);
+			synth_note_on(t - 'A' + 42, channum, 1.0);
 			dodump = 1;
 		} else if (islower(t)) {
-			synth_note_off(t - 'a' + 42, lastchannelnum);
+			synth_note_off(t - 'a' + 42, channum);
 			dodump = 1;
 		}
 #else
