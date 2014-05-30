@@ -263,7 +263,9 @@ typedef struct {
 typedef struct {
 	Instrument base;
 	LowpassParams lp;
-	float duty;
+	float dutybase;
+	float dutyampl;
+	AdsrParams lfoadsr;
 } PulseBassInstrument;
 
 
@@ -293,22 +295,34 @@ sample noise_filt(Instrument *self, void* st, sample in) {
 	return trivial_hp_eval(state, in);
 }
 
+typedef struct PulseBassState {
+	PlsDpwState osc;
+	AdsrState lfoadsr;
+} PulseBassState;
+
 // TODO lfo-adsr
 void pulsebass_init(Channel *ch) {
 	PulseBassInstrument *ins = (PulseBassInstrument*)ch->instr;
 	trivial_lp_init(ch->filtstate, &ins->lp);
-	pls_dpw_init(ch->oscstate, ch->note, ins->duty);
+	pls_dpw_init(ch->oscstate, ch->note, ins->dutybase);
+	PulseBassState *state = (PulseBassState*)ch->oscstate;
+	adsr_init(&state->lfoadsr);
 }
 
 sample pulsebass_osc(Instrument *self, void* st) {
 	PulseBassInstrument *ins = (PulseBassInstrument*)self;
-	PlsDpwState* state = st;
+	PulseBassState* state = st;
+
+	sample adsrval = adsreval(&ins->lfoadsr, &state->lfoadsr, 0);
+
 	// copy in case of pot/lfo update
-	state->duty = ins->duty;
+	state->osc.duty = ins->dutybase + ins->dutyampl * adsrval;
+
 	return pls_dpw_eval(self, st);
 }
 
 sample pulsebass_filt(Instrument *self, void* st, sample in) {
+	return in; // no filt yet
 	PulseBassInstrument *bass = (PulseBassInstrument*)self;
 	LowpassState *state = st;
 	state->coef = bass->lp.coef;
@@ -353,8 +367,9 @@ PulseBassInstrument pulsebass = {
 		pulsebass_filt,
 		{ 0.000208311633451, 0.000208311633451, 0.5, 0.000208311633451 }
 	},
-	{ TRIVIAL_HP_PARM(5000) },
-	0.1,
+	{ TRIVIAL_LP_PARM(5000) },
+	0.1, 0.9,
+	{ 6.94442033189e-06, 1.0, 1.0, 1.0 }
 };
 
 Instrument* instruments[] = {
@@ -444,7 +459,7 @@ void synth_kill(void) {
 void synth_setparams(float f) {
 	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
 	noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
-	pulsebass.duty = f/0xfff;
+	pulsebass.dutybase = f/0xfff;
 }
 
 void synth_setvolume(float f) {
