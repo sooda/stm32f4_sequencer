@@ -142,8 +142,8 @@ def read(fname):
 	chans = chans[0:ins]
 	makenotes(120/8, chans)
 
-#            X              X   x
-CHAN_MAP = [2, -1, -1, -1,  0, -1, -1]
+#            X  y   Y   z   X   y   z
+CHAN_MAP = [0, -1, 3, -1, 2, -1, -1]
 s = serial.Serial("/dev/ttyUSB0",115200)
 def sendmsg(chan,note,vel):
 	print "msg going",chan,note

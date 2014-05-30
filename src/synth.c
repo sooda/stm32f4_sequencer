@@ -268,6 +268,12 @@ typedef struct {
 	AdsrParams lfoadsr;
 } PulseBassInstrument;
 
+typedef struct {
+	Instrument base;
+	LowpassParams lp;
+	float freqampl;
+	int lfonote;
+} VibratoInstrument;
 
 void bass_init(Channel *ch) {
 	BassInstrument *ins = (BassInstrument*)ch->instr;
@@ -300,7 +306,6 @@ typedef struct PulseBassState {
 	AdsrState lfoadsr;
 } PulseBassState;
 
-// TODO lfo-adsr
 void pulsebass_init(Channel *ch) {
 	PulseBassInstrument *ins = (PulseBassInstrument*)ch->instr;
 	trivial_lp_init(ch->filtstate, &ins->lp);
@@ -327,6 +332,60 @@ sample pulsebass_filt(Instrument *self, void* st, sample in) {
 	LowpassState *state = st;
 	state->coef = bass->lp.coef;
 	return trivial_lp_eval(state, in);
+}
+
+typedef struct {
+	PlsDpwState osc;
+	OscDpwState lfo;
+	int orignote;
+} VibratoState;
+
+void vibrato_init(Channel *ch) {
+	VibratoInstrument *ins = (VibratoInstrument*)ch->instr;
+
+	trivial_lp_init(ch->filtstate, &ins->lp);
+
+	VibratoState *state = (VibratoState*)ch->oscstate;
+	pls_dpw_init(&state->osc, ch->note, 0.5); // hardcoded osc duty
+	osc_dpw_init(&state->lfo, ins->lfonote);
+	state->orignote = ch->note;
+}
+
+float dpwcoef(float freq) {
+	return SAMPLERATE / (4 * freq * (1 - freq * DT));
+}
+
+float midifreq(int note) {
+	return pow(2, (note - 69) / 12.0) * 440;
+}
+
+sample vibrato_osc(Instrument *self, void* st) {
+	VibratoInstrument *ins = (VibratoInstrument*)self;
+	VibratoState* state = st;
+
+#if 0
+	// copy from pot
+	// 0.1 is arbitrarily chosen to make lfo slower than normal notes
+	state->lfo.saw.tick =  sawticks[ins->lfonote];
+	// FIXME vol correction coef
+	state->lfo.coef = dpwcoef(midifreq(ins->lfonote)); // dpwcoefs[ins->lfonote];
+#endif
+
+	// execute lfo
+	sample lfoval = osc_dpw_eval(self, &state->lfo);
+
+	// modulate osc freq
+	int n = state->orignote;
+	float slope = (dpwcoefs[n+1] - dpwcoefs[n]);
+	float newcoef = dpwcoefs[n] + ins->freqampl * lfoval * slope;
+	state->osc.saw0.coef = newcoef;
+	state->osc.saw1.coef = newcoef;
+
+	return pls_dpw_eval(self, &state->osc);
+}
+
+sample vibrato_filt(Instrument *self, void* st, sample in) {
+	return trivial_lp_eval(st, in);
 }
 
 #define FiltTrivLpK (DT*2*PI)
@@ -372,10 +431,23 @@ PulseBassInstrument pulsebass = {
 	{ 6.94442033189e-06, 1.0, 1.0, 1.0 }
 };
 
+VibratoInstrument vibrato = {
+	{
+		vibrato_init,
+		vibrato_osc,
+		vibrato_filt,
+		{ 0.000208311633451, 0.000208311633451, 0.5, 0.000208311633451 }
+	},
+	{ TRIVIAL_LP_PARM(1000) },
+	6.0,
+	0
+};
+
 Instrument* instruments[] = {
 	(Instrument*)&bass,
 	(Instrument*)&noise,
-	(Instrument*)&pulsebass
+	(Instrument*)&pulsebass,
+	(Instrument*)&vibrato
 };
 
 
@@ -456,10 +528,18 @@ void synth_kill(void) {
 		channels[i].note |= DEADBIT;
 }
 
-void synth_setparams(float f) {
-	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
-	noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
-	pulsebass.dutybase = f/0xfff;
+void synth_setparams(float f, int chan) {
+	switch (chan) {
+	case 0:
+		bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
+		noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
+		pulsebass.dutybase = f/0xfff;
+		vibrato.freqampl = 10*f/0xfff;
+		break;
+	case 1:
+		vibrato.lfonote = 10*f/0xfff;
+		break;
+	}
 }
 
 void synth_setvolume(float f) {
