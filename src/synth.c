@@ -8,7 +8,7 @@
 
 /***** Main configuration *****/
 
-#define SAMPLERATE 44100
+#define SAMPLERATE 48000
 #define DT (1.0f / SAMPLERATE)
 #define PI 3.14159265358979323846
 typedef float sample;

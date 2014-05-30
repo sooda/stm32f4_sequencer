@@ -8,6 +8,7 @@
 #include "Audio.h"
 #include "adc.h"
 #include "synth.h"
+#include "seq.h"
 
 // Private variables
 volatile uint32_t time_var1, time_var2;
@@ -47,10 +48,11 @@ int main(void) {
 	init();
 	int volume = 0;
 
-	InitializeAudio(Audio44100HzSettings);
+	InitializeAudio(Audio48000HzSettings);
 	adc_init();
 
 	synth_init();
+	seq_init();
 
 	accelinit();
 
@@ -75,6 +77,7 @@ int main(void) {
 			if (BUTTON) {
 
 				synth_kill();
+				seq_init();
 
 				// Toggle audio volume
 				if (volume) {
@@ -198,6 +201,8 @@ void init() {
 	USART_Cmd(USART2, ENABLE);
 }
 
+static int seqtime, seqenabled;
+
 void USART2_IRQHandler(void) {
 	static int channum, chanstate, note, notevel;
 	if (USART_GetITStatus(USART2, USART_IT_RXNE)) {
@@ -207,10 +212,16 @@ void USART2_IRQHandler(void) {
 			channum = t - '0';
 		} else if (isupper(t)) {
 			synth_note_on(t - 'A' + 42, channum, 1.0);
+			if (seqenabled)
+				seq_add_event2(seqtime, channum, SEQ_EVTYPE_KEYON, t - 'A' + 42, 1.0);
 			dodump = 1;
 		} else if (islower(t)) {
 			synth_note_off(t - 'a' + 42, channum);
+			if (seqenabled)
+				seq_add_event(seqtime, channum, SEQ_EVTYPE_KEYOFF, t - 'a' + 42);
 			dodump = 1;
+		} else if (t == ' ') {
+			seqenabled = !seqenabled;
 		}
 #else
 		if (t & 0x80) {
@@ -233,11 +244,46 @@ void USART2_IRQHandler(void) {
 	}
 }
 
+void seqplay(int tick) {
+	struct seqevent *ev = seq_events_at(tick);
+	int n = 0;
+	while (ev) {
+		switch (ev->type) {
+		case SEQ_EVTYPE_KEYON:
+			//printf("on  %d %d\r\n", ev->param1, ev->instrument);
+			synth_note_on(ev->param1, ev->instrument, ev->param2);
+			break;
+		case SEQ_EVTYPE_KEYOFF:
+			//printf("off %d %d\r\n", ev->param1, ev->instrument);
+			synth_note_off(ev->param1, ev->instrument);
+			break;
+		}
+		ev = ev->next;
+		n++;
+	}
+	//printf("evs %d\r\n", n);
+}
 /*
  * Called from systick handler
  */
 void timing_handler() {
 	extern __IO uint32_t TimingDelay;
+	static int prescale, pre2, tik;
+	if (prescale++ == 1000/16) {
+		prescale = 0;
+		if (pre2++ == 16) {
+			pre2 = 0;
+			printf("ping %d\r\n", tik);
+			if (++tik == 8) {
+				tik = 0;
+				printf("******** RESTART *********\r\n");
+			}
+		}
+
+		seqtime++;
+		if (seqenabled)
+			seqplay(seqtime);
+	}
 	if(TimingDelay)TimingDelay--;
 	if (time_var1) {
 		time_var1--;
