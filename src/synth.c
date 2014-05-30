@@ -370,6 +370,8 @@ Instrument* instruments[] = {
 #define NUM_CHANNELS 16
 static Channel channels[NUM_CHANNELS];
 
+float mastervol = 1.0;
+
 static sample eval_channel(Channel* ch) {
 	Instrument* instr = ch->instr;
 	sample a = instr->oscfunc(instr, ch->oscstate);
@@ -389,7 +391,7 @@ int32_t synth_sample(void) {
 		if (!(channels[i].note & DEADBIT))
 			out += eval_channel(&channels[i]);
 	}
-	return 0x7fff * 0.1 * out; // FIXME: adaptive filter
+	return 0x7fff * mastervol * 0.1 * out; // FIXME: adaptive filter
 }
 
 void synth_dump(void) {
@@ -443,6 +445,10 @@ void synth_setparams(float f) {
 	bass.lp.coef = TRIVIAL_LP_PARM(f/0xfff*5000);
 	noise.hp.coef = TRIVIAL_HP_PARM(f/0xfff*8000);
 	pulsebass.duty = f/0xfff;
+}
+
+void synth_setvolume(float f) {
+	mastervol = f;
 }
 
 
