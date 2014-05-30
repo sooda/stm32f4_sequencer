@@ -197,6 +197,7 @@ def printnotes(evs, tpb, bps, endtime):
 			raise ValueError("wat? %d" % ev.evtype)
 		if time != lasttime and firstnote != -1:
 			t = time - firstnote
+			# 4 quarter notes
 			if float(t) / tpb / (bps / 4) > endtime:
 				break
 			print "%04d %.2f %s" % (float(t) / tpb, float(t) / tpb / (bps / 4), " ".join([x[1] for x in line]))
